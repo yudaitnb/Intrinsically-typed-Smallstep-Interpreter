@@ -3,10 +3,7 @@ module boolnat where
 open import Data.Bool.Base
 open import Data.Nat
 
--- data Ty : Set where
---   Bool : Ty
---   Nat : Ty
-
+-- Booleans & Arithmetic expressions (Figure 3-1, 3.2) (p.34, p.41 en)
 data Expr : Set where
   EZero : Expr
   ESucc : Expr → Expr
@@ -17,6 +14,7 @@ data Expr : Set where
   EIszero : Expr → Expr
   EErr : Expr
 
+-- Values
 data Val : Set where
   VZero : Val
   VSucc : Val → Val 
@@ -29,7 +27,7 @@ isnv VZero     = true
 isnv (VSucc v) = isnv v
 isnv _         = false
 
--- bigstep semantics (p.32)
+-- Bigstep semantics (p.43 en)
 evalBS : Expr → Val
 evalBS EZero  = VZero  -- B-Value
 evalBS ETrue  = VTrue  -- B-Value
@@ -43,7 +41,7 @@ evalBS (EPred e) with evalBS e
                            else VErr
 ... | _       = VErr                 
 evalBS (EIszero e) with evalBS e
-... | VZero   = VTrue                  -- B-IszeroZero
+... | VZero   = VTrue                 -- B-IszeroZero
 ... | VSucc v = if isnv v then VFalse -- B-IszeroSucc
                           else VErr
 ... | _       = VErr
@@ -65,53 +63,30 @@ isv' EZero     = true
 isv' (ESucc e) = isnv' e
 isv' _         = false
 
--- smallstep semantics (p.25 and p.30)
--- evalSS : Expr → Expr
--- {-# TERMINATING #-}
--- evalSS EZero  = EZero   -- value
--- evalSS ETrue  = ETrue   -- value
--- evalSS EFalse = EFalse  -- value
--- evalSS (ESucc e) = ESucc (evalSS e) -- E-Succ
--- evalSS (EPred e) with e
--- ... | EZero   = EZero                      -- E-PredZero
--- ... | ESucc t = if isnv' t then evalSS t   -- E-PredSucc
---                            else EErr
--- ... | _       = evalSS (EPred (evalSS e)) -- E-Pred
--- evalSS (EIszero EZero) = ETrue                      -- E-IszeroZero
--- evalSS (EIszero (ESucc e)) = if isnv' e then EFalse -- E-IszeroSucc
---                                         else EErr
--- evalSS (EIf cond th el) with cond
--- ... | ETrue   = evalSS th                         -- E-IfTrue
--- ... | EFalse  = evalSS el                         -- E-IfFalse
--- ... | EZero   = EErr
--- ... | ESucc _ = EErr
--- ... | EPred _ = EErr
--- ... | _       = evalSS (EIf (evalSS cond) th el) -- E-IfIf
--- evalSS _ = EErr
-
-evalOS : Expr → Expr
-evalOS EZero  = EZero   -- value
-evalOS ETrue  = ETrue   -- value
-evalOS EFalse = EFalse  -- value
-evalOS (ESucc e) = ESucc (evalOS e) -- E-Succ
-evalOS (EPred EZero)     = EZero                      -- E-PredZero
-evalOS (EPred (ESucc t)) = if isnv' t then evalOS t   -- E-PredSucc
+-- Smallstep semantics (Figure 3-1, 3.2) (p.34, p.41 en)
+eval01S : Expr → Expr
+eval01S EZero  = EZero   -- value
+eval01S ETrue  = ETrue   -- value
+eval01S EFalse = EFalse  -- value
+eval01S (ESucc e) = ESucc (eval01S e) -- E-Succ
+eval01S (EPred EZero)     = EZero                      -- E-PredZero
+eval01S (EPred (ESucc t)) = if isnv' t then eval01S t   -- E-PredSucc
                                       else EErr
-evalOS (EPred e)         = EPred (evalOS e)           -- E-Pred
-evalOS (EIszero EZero) = ETrue                      -- E-IszeroZero
-evalOS (EIszero (ESucc e)) = if isnv' e then EFalse -- E-IszeroSucc
+eval01S (EPred e)         = EPred (eval01S e)           -- E-Pred
+eval01S (EIszero EZero) = ETrue                      -- E-IszeroZero
+eval01S (EIszero (ESucc e)) = if isnv' e then EFalse -- E-IszeroSucc
                                         else EErr
-evalOS (EIf cond th el) with cond
-... | ETrue   = evalOS th                         -- E-IfTrue
-... | EFalse  = evalOS el                         -- E-IfFalse
+eval01S (EIf cond th el) with cond
+... | ETrue   = eval01S th                         -- E-IfTrue
+... | EFalse  = eval01S el                         -- E-IfFalse
 ... | EZero   = EErr
 ... | ESucc _ = EErr
 ... | EPred _ = EErr
-... | _       = EIf (evalOS cond) th el -- E-IfIf
-evalOS _ = EErr
+... | _       = EIf (eval01S cond) th el -- E-IfIf
+eval01S _ = EErr
 
 evalMS : Expr → Expr
 {-# TERMINATING #-}
-evalMS e = let v = evalOS e in
+evalMS e = let v = eval01S e in
            if isv' v then v
                      else evalMS v
