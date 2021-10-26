@@ -1,19 +1,26 @@
-module intrinsically where
-
--- TODO: evalMS, eval01Sのパターンマッチが不足
+module Common.Test2 where
 
 open import Data.Bool using (if_then_else_; true; false; Bool)
-open import Data.Nat
-open import Data.Nat.Base using (_<_)
-open import Data.Nat.Properties using (≤-trans)
+open import Data.Nat using (ℕ; suc; zero; _+_)
+open import Data.Nat.Base using (_<_; s≤s)
+open import Data.Nat.Properties using (≤-trans; n<1+n; ≤-refl; ≤-step)
 open import Relation.Binary.Core using (Rel)
 open import Data.Product using (_,_; ∃)
 open import Level using (0ℓ)
 open import Function using ( _∘_; _$_ )
+open import Data.Sum
+  renaming (inj₁ to inl; inj₂ to inr)
+  using (_⊎_)
 
 data Ty : Set where
   bool : Ty
   int : Ty
+
+data Val : Ty -> Set where
+  VZero : Val int
+  VSucc : Val int → Val int
+  VTrue : Val bool
+  VFalse : Val bool
 
 data Expr : Ty -> Set where
   EZero : Expr int
@@ -25,18 +32,21 @@ data Expr : Ty -> Set where
   EIszero : Expr int → Expr bool
   -- EErr : Expr
 
-data Val : Ty -> Set where
-  VZero : Val int
-  VSucc : Val int → Val int
-  VTrue : Val bool
-  VFalse : Val bool
-  -- VErr : Val
+-- 値と式の同型
+data _==_ : ∀{T} -> Val T -> Expr T -> Set where
+  zero  : VZero  == EZero
+  succ  : ∀{v e} -> v == e -> (VSucc v) == (ESucc e)
+  true  : VTrue  == ETrue
+  false : VFalse == EFalse
 
 -- 1step reduction relation
-data _⟶_  : ∀ {T : Ty} -> Expr T -> Expr T -> Set where
-  e-if     : ∀{t t' e1 e2} -> t ⟶ t' -> EIf t e1 e2 ⟶ EIf t' e1 e2
-  e-ifT    : ∀{e1 e2} -> (EIf ETrue e1 e2  ⟶ e1)
-  e-ifF    : ∀{e1 e2} -> (EIf EFalse e1 e2 ⟶ e2)
+data _⟶_  : ∀{T} -> Expr T -> Expr T -> Set where
+
+  e-if     : ∀{T}{t t'}{e1 e2 : Expr T}
+              -> t ⟶ t' -> EIf t e1 e2 ⟶ EIf t' e1 e2
+
+  e-ifT    : ∀{T}{e1 e2 : Expr T} -> (EIf ETrue  e1 e2 ⟶ e1)
+  e-ifF    : ∀{T}{e1 e2 : Expr T} -> (EIf EFalse e1 e2 ⟶ e2)
 
   e-succ   : ∀{t t'} -> (t ⟶ t') -> (ESucc t ⟶ ESucc t')
 
@@ -47,35 +57,37 @@ data _⟶_  : ∀ {T : Ty} -> Expr T -> Expr T -> Set where
   e-iszeroT : EIszero EZero ⟶ ETrue
   e-iszeroF : ∀{t} -> EIszero (ESucc t) ⟶ EFalse
 
-data _⟶*_ {T} (e : Expr T) : Expr T -> Set where
-  refl : e ⟶* e
-  cons : ∀{e1 e2} -> (e ⟶ e1) -> (e1 ⟶* e2) -> (e ⟶* e2)
-  -- step : ∀{e'} -> (e ⟶ e') -> (e ⟶* e')
-  -- trans : ∀{e1 e2} -> e ⟶* e1 -> e1 ⟶* e2 -> e ⟶* e2
+-- data _⟶*_ {T} (e : Expr T) : Expr T -> Set where
+--   refl : e ⟶* e
+--   cons : ∀{e1 e2} -> (e ⟶ e1) -> (e1 ⟶* e2) -> (e ⟶* e2)
+--   step : ∀{e'} -> (e ⟶ e') -> (e ⟶* e')
+--   trans : ∀{e1 e2} -> e ⟶* e1 -> e1 ⟶* e2 -> e ⟶* e2
 
--- 0step or 1step
-data _⟶₀₁_ {T} (e : Expr T) : Expr T -> Set where
-  refl : e ⟶₀₁ e
-  1step : ∀{e'} -> (e ⟶ e') -> (e ⟶₀₁ e')
+-- progress & preservation
+typesafe-eval : ∀ {T} -> (e : Expr T) -> (∃ λ (v : Val T) -> (v == e)) ⊎ (∃ λ (e' : Expr T) -> (e ⟶ e'))
+typesafe-eval ETrue  = inl (_ , true)
+typesafe-eval EFalse = inl (_ , false)
+typesafe-eval EZero  = inl (_ , zero)
 
-eval01S : ∀{T} -> (e : Expr T) -> ∃ λ e' -> (e ⟶₀₁ e')
-eval01S ETrue  = (_ , refl)
-eval01S EFalse = (_ , refl)
-eval01S EZero  = (_ , refl)
+typesafe-eval (ESucc e) with (typesafe-eval e)
+... | inl (v  , r) = inl (VSucc v  , succ r)
+... | inr (e' , r) = inr (ESucc e' , e-succ r)
 
-eval01S (ESucc e) with eval01S e
-... | (_ , refl)         = (_ , refl)
-... | (e' , (1step r))   = ((ESucc e') , (1step $ e-succ r))
+typesafe-eval (EIszero e) with (typesafe-eval e)
+... | inl (_ , zero)   = inr (ETrue  , e-iszeroT)
+... | inl (_ , succ _) = inr (EFalse , e-iszeroF)
+... | inr (e' , r)    = inr ((EIszero e') , (e-iszero r))
 
-eval01S (EIszero e) with eval01S e
-... | (_ , refl)         = (_ , refl)
-... | (e' , (1step r))   = ((EIszero e') , (1step $ e-iszero r))
 
-eval01S (EIf c t e) with eval01S c
-... | (ETrue  , refl)  = (t , 1step e-ifT)
-... | (EFalse , refl)  = (e , 1step e-ifF)
-... | (c' , (1step r)) = ((EIf c' t e) , (1step $ e-if r))
+-- typesafe-eval (EIf c t e) with (typesafe-eval c)
+-- ... | inl VTrue    = inr (t , e-ifT)  -- (c = ETrue)を教える必要がある
+-- ... | inl VFalse   = inr (e , e-ifF)
+-- ... | inr (c' , r) = inr ((EIf c' t e) , (e-if r))
 
+typesafe-eval (EIf c t e) with (typesafe-eval c)
+... | inl (_ , true)   = inr (t , e-ifT)
+... | inl (_ , false)  = inr (e , e-ifF)
+... | inr (c' , r)     = inr ((EIf c' t e) , (e-if r))
 
 
 -- Accessibility
@@ -124,32 +136,19 @@ size _ = 1
 _<<_ : ∀{T} -> Rel (Expr T) 0ℓ
 t << t' = (size t) < (size t')
 
--- 実装めんどくさいので許してください
+
+
+-- 真心こめて実装中
 postulate
+  reduce-size : ∀ {T}{e e' : Expr T} -> (e ⟶ e') -> (e' << e)
   wf-<< : ∀{T} -> WellFounded (Expr T) _<<_
-  reduce-size : ∀ {e e'} -> (e ⟶ e') -> (e' << e)
 
 
-evalMain : ∀{T} -> Expr T -> Expr T
+evalMain : ∀{T} -> Expr T -> Val T
 evalMain = recFun wf-<< (evalMS)
   where
-  evalMS : ∀{T} -> (e : Expr T) -> ((e' : Expr T) -> e' << e -> Expr T) -> Expr T
-  evalMS EZero  rec-call = EZero
-  evalMS ETrue  rec-call = ETrue
-  evalMS EFalse rec-call = EFalse
-
-  evalMS (ESucc e) rec-call with (eval01S e)
-  ... | (_ , refl) = ESucc e
-  ... | (e' , 1step r) = rec-call (ESucc e') (reduce-size $ e-succ r)
-
-
-  evalMS (EIf c t e) rec-call with (eval01S c)
-  ... | (ETrue  , refl) = rec-call t (reduce-size e-ifT)
-  ... | (EFalse , refl) = rec-call e (reduce-size e-ifF)
-  ... | (c' , 1step r)  = rec-call (EIf c' t e) (reduce-size (e-if r))
-
-
-  evalMS (EIszero e) rec-call with (eval01S e)
-  ... | (EZero , refl) = ETrue
-  ... | (e' , 1step r) = rec-call (EIszero e') (reduce-size (e-iszero r))
+  evalMS : ∀{T} -> (e : Expr T) -> ((e' : Expr T) -> e' << e -> Val T) -> Val T
+  evalMS e rec-call with (typesafe-eval e)
+  ... | inl (v , _)  = v
+  ... | inr (e' , r) = rec-call e' $ reduce-size r 
 
